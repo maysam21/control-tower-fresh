@@ -7,6 +7,15 @@ st.set_page_config(layout="wide")
 
 # ---------------- SESSION INIT ----------------
 
+if "users" not in st.session_state:
+    st.session_state.users = {
+        "admin": {
+            "password": "admin123",
+            "role": "Admin",
+            "plant": "All"
+        }
+    }
+
 if "user" not in st.session_state:
     st.session_state.user = None
 
@@ -15,18 +24,12 @@ if "production" not in st.session_state:
         columns=["date","plant","category","plan","actual"]
     )
 
-# ---------------- USER DATABASE ----------------
-
-USERS = {
-    "admin": {"password": "admin123", "role": "Admin", "plant": "All"},
-    "jd_supervisor": {"password": "1234", "role": "Supervisor", "plant": "JD"},
-    "snoair_supervisor": {"password": "1234", "role": "Supervisor", "plant": "Snoair"},
-}
-
 PLANTS = ["JD","Snoair","APT","SP","Inhouse"]
 CATEGORIES = ["Chimney","Burner"]
 
-# ---------------- LOGIN ----------------
+# =========================================================
+# LOGIN
+# =========================================================
 
 def login():
     st.title("MANUFACTURING CONTROL TOWER")
@@ -35,11 +38,13 @@ def login():
     password = st.text_input("Password", type="password")
 
     if st.button("Login"):
-        if username in USERS and USERS[username]["password"] == password:
+        users = st.session_state.users
+
+        if username in users and users[username]["password"] == password:
             st.session_state.user = {
                 "username": username,
-                "role": USERS[username]["role"],
-                "plant": USERS[username]["plant"]
+                "role": users[username]["role"],
+                "plant": users[username]["plant"]
             }
         else:
             st.error("Invalid Credentials")
@@ -51,27 +56,63 @@ if st.session_state.user is None:
 user = st.session_state.user
 
 # =========================================================
-# ROLE BASED MENU CONTROL
+# ROLE BASED MENU
 # =========================================================
 
 if user["role"] == "Admin":
-    menu = st.sidebar.selectbox("Menu", ["Dashboard","Shift Entry"])
+    menu = st.sidebar.selectbox("Menu", ["Dashboard","Shift Entry","User Management"])
 else:
-    menu = "Shift Entry"   # Supervisor sees only entry
+    menu = "Shift Entry"
 
 st.sidebar.write("Logged in:", user["username"])
 st.sidebar.write("Role:", user["role"])
 st.sidebar.write("Plant:", user["plant"])
 
 # =========================================================
-# SHIFT ENTRY (Supervisor & Admin)
+# USER MANAGEMENT (ADMIN ONLY)
+# =========================================================
+
+if menu == "User Management" and user["role"] == "Admin":
+
+    st.title("USER MANAGEMENT")
+
+    st.subheader("Create New User")
+
+    new_username = st.text_input("Username")
+    new_password = st.text_input("Password", type="password")
+    new_role = st.selectbox("Role", ["Supervisor"])
+    mapped_plant = st.selectbox("Map to Plant", PLANTS)
+
+    if st.button("Create User"):
+
+        if new_username in st.session_state.users:
+            st.error("User already exists")
+        else:
+            st.session_state.users[new_username] = {
+                "password": new_password,
+                "role": new_role,
+                "plant": mapped_plant
+            }
+            st.success("User Created Successfully")
+
+    st.markdown("---")
+
+    st.subheader("Existing Users")
+
+    users_df = pd.DataFrame.from_dict(
+        st.session_state.users, orient="index"
+    ).reset_index().rename(columns={"index": "Username"})
+
+    st.dataframe(users_df, use_container_width=True)
+
+# =========================================================
+# SHIFT ENTRY
 # =========================================================
 
 if menu == "Shift Entry":
 
     st.title("SHIFT ENTRY")
 
-    # Supervisor fixed plant
     if user["role"] == "Supervisor":
         plant = user["plant"]
         st.subheader(f"Plant: {plant}")
@@ -103,42 +144,12 @@ if menu == "Shift Entry":
         st.success("Entry Saved Successfully")
 
 # =========================================================
-# DASHBOARD (Admin Only)
+# DASHBOARD (ADMIN ONLY)
 # =========================================================
 
 if menu == "Dashboard" and user["role"] == "Admin":
 
-    st.markdown("""
-    <style>
-    .stApp { background-color: #0b1622; }
-    .main-title {
-        font-size: 42px;
-        font-weight: 800;
-        color: white;
-        text-align: center;
-        margin-bottom: 20px;
-    }
-    .kpi-box {
-        padding: 20px;
-        border-radius: 12px;
-        text-align: center;
-        font-size: 22px;
-        font-weight: 700;
-        color: white;
-    }
-    .blue {background: linear-gradient(135deg,#1e3a8a,#1e293b);}
-    .green {background: linear-gradient(135deg,#16a34a,#065f46);}
-    .amber {background: linear-gradient(135deg,#f59e0b,#b45309);}
-    .panel {
-        background: #132235;
-        padding: 20px;
-        border-radius: 12px;
-        color: white;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-
-    st.markdown("<div class='main-title'>MANUFACTURING CONTROL TOWER</div>", unsafe_allow_html=True)
+    st.title("MANUFACTURING CONTROL TOWER DASHBOARD")
 
     df = st.session_state.production.copy()
 
@@ -147,7 +158,6 @@ if menu == "Dashboard" and user["role"] == "Admin":
         st.stop()
 
     df["date"] = pd.to_datetime(df["date"]).dt.date
-
     selected_date = st.date_input("Select Date", datetime.today())
     df = df[df["date"] == selected_date]
 
@@ -158,31 +168,20 @@ if menu == "Dashboard" and user["role"] == "Admin":
     total_actual = df["actual"].sum()
 
     achievement = round((total_actual/total_plan)*100,2) if total_plan>0 else 0
-    rejection = round(((total_plan-total_actual)/total_plan)*100,2) if total_plan>0 else 0
 
-    # KPI STRIP
-    c1,c2,c3,c4 = st.columns(4)
-    c1.markdown(f"<div class='kpi-box blue'>{int(total_plan)}<br>Total Plan</div>", unsafe_allow_html=True)
-    c2.markdown(f"<div class='kpi-box blue'>{int(total_actual)}<br>Total Actual</div>", unsafe_allow_html=True)
-    c3.markdown(f"<div class='kpi-box green'>{achievement}%<br>Achievement</div>", unsafe_allow_html=True)
-    c4.markdown(f"<div class='kpi-box amber'>{rejection}%<br>Rejection</div>", unsafe_allow_html=True)
+    col1,col2,col3 = st.columns(3)
+    col1.metric("Total Plan", int(total_plan))
+    col2.metric("Total Actual", int(total_actual))
+    col3.metric("Achievement %", achievement)
 
-    st.markdown("<br>", unsafe_allow_html=True)
+    plant_df = df.groupby("plant").sum(numeric_only=True).reset_index()
 
-    # Plant Performance
-    st.markdown("<div class='panel'><h3>Plant Performance</h3>", unsafe_allow_html=True)
-
-    plant_df = df.groupby("plant").agg({"plan":"sum","actual":"sum"}).reset_index()
-    plant_df["plan"] = pd.to_numeric(plant_df["plan"], errors="coerce")
-    plant_df["actual"] = pd.to_numeric(plant_df["actual"], errors="coerce")
-    plant_df["Ach %"] = ((plant_df["actual"]/plant_df["plan"])*100).round(1)
-
-    for _,row in plant_df.iterrows():
-        ach_val = row["Ach %"] if pd.notna(row["Ach %"]) else 0
-        color = "lightgreen" if ach_val>=95 else "orange" if ach_val>=90 else "red"
-        st.markdown(
-            f"<p style='color:{color};font-size:18px;'><b>{row['plant']}</b> - {ach_val}%</p>",
-            unsafe_allow_html=True
-        )
-
-    st.markdown("</div>", unsafe_allow_html=True)
+    if not plant_df.empty:
+        fig = go.Figure()
+        fig.add_trace(go.Bar(
+            x=plant_df["plant"],
+            y=plant_df["actual"],
+            name="Actual"
+        ))
+        fig.update_layout(template="plotly_dark")
+        st.plotly_chart(fig, use_container_width=True)
