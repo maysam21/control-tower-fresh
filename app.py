@@ -73,37 +73,36 @@ button {
 """, unsafe_allow_html=True)
 
 # ================================
-# LOGIN PAGE
+# LOGIN SYSTEM (STABLE VERSION)
 # ================================
 
 def login():
 
     st.markdown("<div class='main-title'>MANUFACTURING CONTROL TOWER</div>", unsafe_allow_html=True)
 
-    username = st.text_input("Username").strip()
-    password = st.text_input("Password", type="password").strip()
+    username = st.text_input("Username", key="login_user").strip()
+    password = st.text_input("Password", type="password", key="login_pass").strip()
 
-    if st.button("Login"):
+    if st.button("Login", key="login_btn"):
 
-        if username in st.session_state.users and \
-           st.session_state.users[username]["password"] == password:
+        users = st.session_state.users
+
+        if username in users and users[username]["password"] == password:
 
             st.session_state.user = {
                 "username": username,
-                "role": st.session_state.users[username]["role"],
-                "plant": st.session_state.users[username]["plant"]
+                "role": users[username]["role"],
+                "plant": users[username]["plant"]
             }
-
-            st.rerun()
 
         else:
             st.error("Invalid Credentials")
 
 
+# Show login only if not logged in
 if st.session_state.user is None:
     login()
     st.stop()
-
 
 # ================================
 # SIDEBAR MENU
@@ -119,7 +118,8 @@ else:
 
 if st.sidebar.button("Logout"):
     st.session_state.user = None
-    st.rerun()
+    st.experimental_set_query_params()
+    st.stop()
 
 # =========================================================
 # SHIFT ENTRY (Supervisor Only)
@@ -272,3 +272,4 @@ if menu == "User Management":
             }
             st.success("User Created Successfully")
             st.rerun()
+
