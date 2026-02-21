@@ -59,27 +59,34 @@ if "user" not in st.session_state:
     st.session_state.user = None
 
 def login():
-    st.title("Manufacturing Control Tower")
+
+    st.title("Manufacturing Control Tower Login")
 
     username = st.text_input("Username")
     password = st.text_input("Password", type="password")
 
     if st.button("Login"):
+
         conn = get_conn()
         c = conn.cursor()
         user = c.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
         conn.close()
 
         if user and user[2] == hash_password(password):
-            st.session_state.user = user
-            st.rerun()
+            st.session_state.user = {
+                "id": user[0],
+                "username": user[1],
+                "role": user[3],
+                "plant": user[4]
+            }
+            st.success("Login Successful")
         else:
             st.error("Invalid Credentials")
+
 
 if st.session_state.user is None:
     login()
     st.stop()
-
 # ---------------- MENU ----------------
 
 PLANTS = ["JD","Snoair","APT","SP","Inhouse"]
@@ -310,5 +317,6 @@ if menu == "User Management" and st.session_state.user[3] == "Admin":
         except:
 
             st.error("User already exists")
+
 
 
