@@ -1,62 +1,36 @@
 import streamlit as st
 import pandas as pd
-import sqlite3
 import hashlib
 from datetime import datetime
 import plotly.graph_objects as go
 
 st.set_page_config(layout="wide")
 
-# ---------------- DATABASE ----------------
+# ---------------- SIMPLE AUTH ----------------
 
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
-def init_db():
-    conn = sqlite3.connect("enterprise.db")
-    c = conn.cursor()
+# Default users stored in memory
+USERS = {
+    "admin": {
+        "password": hash_password("admin123"),
+        "role": "Admin",
+        "plant": "All"
+    }
+}
 
-    c.execute("""
-    CREATE TABLE IF NOT EXISTS users(
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        username TEXT UNIQUE,
-        password TEXT,
-        role TEXT,
-        plant TEXT
-    )
-    """)
-
-    c.execute("""
-    CREATE TABLE IF NOT EXISTS production(
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        date TEXT,
-        plant TEXT,
-        category TEXT,
-        plan INTEGER,
-        actual INTEGER
-    )
-    """)
-
-    conn.commit()
-
-    if c.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 0:
-        c.execute(
-            "INSERT INTO users(username,password,role,plant) VALUES (?,?,?,?)",
-            ("admin", hash_password("admin123"), "Admin", "All")
-        )
-        conn.commit()
-
-    conn.close()
-
-def get_conn():
-    return sqlite3.connect("enterprise.db")
-
-init_db()
-
-# ---------------- LOGIN ----------------
+# ---------------- SESSION INIT ----------------
 
 if "user" not in st.session_state:
     st.session_state.user = None
+
+if "production" not in st.session_state:
+    st.session_state.production = pd.DataFrame(
+        columns=["date","plant","category","plan","actual"]
+    )
+
+# ---------------- LOGIN ----------------
 
 def login():
     st.title("Manufacturing Control Tower Login")
@@ -66,17 +40,11 @@ def login():
 
     if st.button("Login"):
 
-        conn = get_conn()
-        c = conn.cursor()
-        user = c.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
-        conn.close()
-
-        if user and user[2] == hash_password(password):
+        if username in USERS and USERS[username]["password"] == hash_password(password):
             st.session_state.user = {
-                "id": user[0],
-                "username": user[1],
-                "role": user[3],
-                "plant": user[4]
+                "username": username,
+                "role": USERS[username]["role"],
+                "plant": USERS[username]["plant"]
             }
         else:
             st.error("Invalid Credentials")
@@ -84,13 +52,14 @@ def login():
 if st.session_state.user is None:
     login()
     st.stop()
+
 # ---------------- CONSTANTS ----------------
 
 PLANTS = ["JD","Snoair","APT","SP","Inhouse"]
 CATEGORIES = ["Chimney","Burner"]
 
 st.sidebar.write("Logged in:", st.session_state.user["username"])
-menu = st.sidebar.selectbox("Menu", ["Dashboard","Entry","User Management"])
+menu = st.sidebar.selectbox("Menu", ["Dashboard","Entry"])
 
 # ---------------- ENTRY ----------------
 
@@ -111,14 +80,20 @@ if menu == "Entry":
     actual = col2.number_input("Actual", 0)
 
     if st.button("Save"):
-        conn = get_conn()
-        c = conn.cursor()
-        c.execute("""
-        INSERT INTO production(date,plant,category,plan,actual)
-        VALUES (?,?,?,?,?)
-        """, (str(date), plant, category, plan, actual))
-        conn.commit()
-        conn.close()
+
+        new_row = pd.DataFrame([{
+            "date": date,
+            "plant": plant,
+            "category": category,
+            "plan": plan,
+            "actual": actual
+        }])
+
+        st.session_state.production = pd.concat(
+            [st.session_state.production, new_row],
+            ignore_index=True
+        )
+
         st.success("Saved Successfully")
 
 # ---------------- DASHBOARD ----------------
@@ -129,7 +104,7 @@ if menu == "Dashboard":
     <style>
     .stApp { background-color: #0b1622; }
     .title {
-        font-size: 42px;
+        font-size: 40px;
         font-weight: 700;
         color: white;
         text-align: center;
@@ -146,20 +121,12 @@ if menu == "Dashboard":
     .blue {background: linear-gradient(135deg,#1e3a8a,#1e293b);}
     .green {background: linear-gradient(135deg,#16a34a,#065f46);}
     .amber {background: linear-gradient(135deg,#f59e0b,#b45309);}
-    .panel {
-        background: #132235;
-        padding: 20px;
-        border-radius: 12px;
-        color: white;
-    }
     </style>
     """, unsafe_allow_html=True)
 
     st.markdown("<div class='title'>MANUFACTURING CONTROL TOWER</div>", unsafe_allow_html=True)
 
-    conn = get_conn()
-    df = pd.read_sql("SELECT * FROM production", conn)
-    conn.close()
+    df = st.session_state.production.copy()
 
     if df.empty:
         st.warning("No data available")
@@ -175,7 +142,6 @@ if menu == "Dashboard":
     achievement = round((total_actual/total_plan)*100,2) if total_plan>0 else 0
     rejection = round(((total_plan-total_actual)/total_plan)*100,2) if total_plan>0 else 0
 
-    # KPI Row
     c1,c2,c3,c4 = st.columns(4)
     c1.markdown(f"<div class='kpi-box blue'>{total_plan}<br>Total Plan</div>", unsafe_allow_html=True)
     c2.markdown(f"<div class='kpi-box blue'>{total_actual}<br>Total Actual</div>", unsafe_allow_html=True)
@@ -184,45 +150,7 @@ if menu == "Dashboard":
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    col1,col2,col3 = st.columns([1.2,1,1])
-
-    # Plant Performance
-    with col1:
-        st.markdown("<div class='panel'><h3>Plant Performance</h3>", unsafe_allow_html=True)
-        plant_df = df.groupby("plant").agg({"plan":"sum","actual":"sum"}).reset_index()
-        plant_df["Ach %"] = round((plant_df["actual"]/plant_df["plan"])*100,1)
-        for _,row in plant_df.iterrows():
-            color = "lightgreen" if row["Ach %"]>=95 else "orange" if row["Ach %"]>=90 else "red"
-            st.markdown(f"<p style='color:{color};font-size:18px;'><b>{row['plant']}</b> - {row['Ach %']}%</p>", unsafe_allow_html=True)
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    # Category Panels
-    with col2:
-        for cat in CATEGORIES:
-            st.markdown(f"<div class='panel'><h3>{cat}</h3>", unsafe_allow_html=True)
-            cat_df = df[df["category"]==cat]
-            if not cat_df.empty:
-                ach = round((cat_df["actual"].sum()/cat_df["plan"].sum())*100,1)
-                st.markdown(f"<h2>{ach}%</h2>", unsafe_allow_html=True)
-            st.markdown("</div><br>", unsafe_allow_html=True)
-
-    # Alerts
-    with col3:
-        st.markdown("<div class='panel'><h3>Alerts</h3>", unsafe_allow_html=True)
-        if achievement < 90:
-            st.markdown("<p style='color:red;'>🔴 Achievement below 90%</p>", unsafe_allow_html=True)
-        if rejection > 5:
-            st.markdown("<p style='color:orange;'>⚠ High Rejection</p>", unsafe_allow_html=True)
-        if achievement >= 95:
-            st.markdown("<p style='color:lightgreen;'>✅ Performing Well</p>", unsafe_allow_html=True)
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    # Trend Chart
-    st.markdown("<h3 style='color:white;'>Production Trend</h3>", unsafe_allow_html=True)
-
-    weekly = pd.read_sql("SELECT * FROM production", get_conn())
+    weekly = st.session_state.production.copy()
     weekly["date"] = pd.to_datetime(weekly["date"])
     weekly = weekly.groupby("date").sum(numeric_only=True).reset_index()
 
@@ -232,36 +160,3 @@ if menu == "Dashboard":
         fig.add_trace(go.Scatter(x=weekly["date"], y=weekly["actual"], mode='lines+markers', name='Actual'))
         fig.update_layout(template="plotly_dark", height=400)
         st.plotly_chart(fig, use_container_width=True)
-
-# ---------------- USER MANAGEMENT ----------------
-
-if menu == "User Management" and st.session_state.user["role"] == "Admin":
-
-    st.title("User Management")
-
-    conn = get_conn()
-    users = pd.read_sql("SELECT id,username,role,plant FROM users", conn)
-    conn.close()
-
-    st.dataframe(users)
-
-    st.subheader("Add User")
-
-    new_user = st.text_input("New Username")
-    new_pass = st.text_input("New Password")
-    plant = st.selectbox("Plant", PLANTS)
-
-    if st.button("Create User"):
-        try:
-            conn = get_conn()
-            c = conn.cursor()
-            c.execute(
-                "INSERT INTO users(username,password,role,plant) VALUES (?,?,?,?)",
-                (new_user, hash_password(new_pass), "Supervisor", plant)
-            )
-            conn.commit()
-            conn.close()
-            st.success("User Created")
-        except:
-            st.error("User already exists")
-
