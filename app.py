@@ -115,10 +115,25 @@ if menu == "Entry":
         conn.close()
         st.success("Saved")
 
-# ---------------- DASHBOARD ----------------
+# ---------------- ENTERPRISE DASHBOARD ----------------
 
 if menu == "Dashboard":
-    st.title("Dashboard")
+    st.markdown("""
+        <style>
+        body {background-color: #0e1a2b;}
+        .big-font {font-size:32px !important; font-weight:600;}
+        .kpi-card {
+            background: linear-gradient(135deg,#1c2b45,#101d33);
+            padding:20px;
+            border-radius:15px;
+            text-align:center;
+            color:white;
+            box-shadow: 0px 4px 20px rgba(0,0,0,0.4);
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
+    st.markdown("<h1 style='text-align:center;color:white;'>MANUFACTURING CONTROL TOWER</h1>", unsafe_allow_html=True)
 
     conn = get_conn()
     df = pd.read_sql("SELECT * FROM production", conn)
@@ -126,20 +141,60 @@ if menu == "Dashboard":
 
     if df.empty:
         st.warning("No data available")
-    else:
-        df["date"] = pd.to_datetime(df["date"]).dt.date
-        selected_date = st.date_input("Select Date", datetime.today())
-        df = df[df["date"] == selected_date]
+        st.stop()
 
-        total_plan = df["plan"].sum()
-        total_actual = df["actual"].sum()
+    df["date"] = pd.to_datetime(df["date"]).dt.date
+    selected_date = st.date_input("Select Date", datetime.today())
+    df = df[df["date"] == selected_date]
 
-        achievement = round((total_actual / total_plan) * 100, 2) if total_plan > 0 else 0
+    total_plan = df["plan"].sum()
+    total_actual = df["actual"].sum()
 
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Total Plan", total_plan)
-        col2.metric("Total Actual", total_actual)
-        col3.metric("Achievement %", achievement)
+    achievement = round((total_actual / total_plan) * 100, 2) if total_plan > 0 else 0
+
+    rejection = round(((total_plan-total_actual)/total_plan)*100,2) if total_plan>0 else 0
+
+    # ---------- KPI ROW ----------
+    col1,col2,col3,col4 = st.columns(4)
+
+    with col1:
+        st.markdown(f"<div class='kpi-card'><div class='big-font'>{total_plan}</div>Total Plan</div>", unsafe_allow_html=True)
+
+    with col2:
+        st.markdown(f"<div class='kpi-card'><div class='big-font'>{total_actual}</div>Total Actual</div>", unsafe_allow_html=True)
+
+    with col3:
+        st.markdown(f"<div class='kpi-card'><div class='big-font'>{achievement}%</div>Achievement</div>", unsafe_allow_html=True)
+
+    with col4:
+        st.markdown(f"<div class='kpi-card'><div class='big-font'>{rejection}%</div>Rejection</div>", unsafe_allow_html=True)
+
+    st.markdown("---")
+
+    # ---------- PLANT PERFORMANCE ----------
+    st.markdown("<h2 style='color:white;'>Plant Performance</h2>", unsafe_allow_html=True)
+
+    plant_df = df.groupby("plant").agg({"plan":"sum","actual":"sum"}).reset_index()
+    plant_df["Achievement %"] = round((plant_df["actual"]/plant_df["plan"])*100,2)
+
+    st.dataframe(plant_df, use_container_width=True)
+
+    # ---------- CATEGORY PERFORMANCE ----------
+    st.markdown("<h2 style='color:white;'>Category Performance</h2>", unsafe_allow_html=True)
+
+    cat_df = df.groupby("category").agg({"plan":"sum","actual":"sum"}).reset_index()
+    cat_df["Achievement %"] = round((cat_df["actual"]/cat_df["plan"])*100,2)
+
+    st.dataframe(cat_df, use_container_width=True)
+
+    # ---------- WEEKLY TREND ----------
+    st.markdown("<h2 style='color:white;'>Weekly Trend</h2>", unsafe_allow_html=True)
+
+    weekly = pd.read_sql("SELECT * FROM production", get_conn())
+    weekly["date"] = pd.to_datetime(weekly["date"])
+    weekly = weekly.groupby("date").sum().reset_index()
+
+    st.line_chart(weekly.set_index("date")[["plan","actual"]])
 
 # ---------------- USER MANAGEMENT ----------------
 
@@ -170,4 +225,5 @@ if menu == "User Management" and st.session_state.user[3] == "Admin":
             conn.close()
             st.success("User Created")
         except:
+
             st.error("User already exists")
