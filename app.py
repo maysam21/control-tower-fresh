@@ -115,25 +115,47 @@ if menu == "Entry":
         conn.close()
         st.success("Saved")
 
-# ---------------- ENTERPRISE DASHBOARD ----------------
+# ---------------- CONTROL TOWER DASHBOARD ----------------
 
 if menu == "Dashboard":
+
     st.markdown("""
-        <style>
-        body {background-color: #0e1a2b;}
-        .big-font {font-size:32px !important; font-weight:600;}
-        .kpi-card {
-            background: linear-gradient(135deg,#1c2b45,#101d33);
-            padding:20px;
-            border-radius:15px;
-            text-align:center;
-            color:white;
-            box-shadow: 0px 4px 20px rgba(0,0,0,0.4);
-        }
-        </style>
+    <style>
+    .stApp {
+        background-color: #0b1622;
+    }
+
+    .title {
+        font-size: 48px;
+        font-weight: 700;
+        color: white;
+        text-align: center;
+        letter-spacing: 2px;
+        margin-bottom: 10px;
+    }
+
+    .kpi-box {
+        padding: 25px;
+        border-radius: 10px;
+        text-align: center;
+        font-size: 22px;
+        font-weight: 600;
+        color: white;
+    }
+
+    .blue {background: linear-gradient(135deg,#1e3a8a,#1e293b);}
+    .amber {background: linear-gradient(135deg,#f59e0b,#b45309);}
+    .green {background: linear-gradient(135deg,#16a34a,#065f46);}
+    .panel {
+        background: #132235;
+        padding: 20px;
+        border-radius: 12px;
+        color: white;
+    }
+    </style>
     """, unsafe_allow_html=True)
 
-    st.markdown("<h1 style='text-align:center;color:white;'>MANUFACTURING CONTROL TOWER</h1>", unsafe_allow_html=True)
+    st.markdown("<div class='title'>MANUFACTURING CONTROL TOWER</div>", unsafe_allow_html=True)
 
     conn = get_conn()
     df = pd.read_sql("SELECT * FROM production", conn)
@@ -149,53 +171,78 @@ if menu == "Dashboard":
 
     total_plan = df["plan"].sum()
     total_actual = df["actual"].sum()
-
-    achievement = round((total_actual / total_plan) * 100, 2) if total_plan > 0 else 0
-
+    achievement = round((total_actual/total_plan)*100,2) if total_plan>0 else 0
     rejection = round(((total_plan-total_actual)/total_plan)*100,2) if total_plan>0 else 0
 
-    # ---------- KPI ROW ----------
-    col1,col2,col3,col4 = st.columns(4)
+    # ---------------- KPI STRIP ----------------
+    c1,c2,c3,c4 = st.columns(4)
 
+    c1.markdown(f"<div class='kpi-box blue'>{total_plan}<br>Total Plan</div>", unsafe_allow_html=True)
+    c2.markdown(f"<div class='kpi-box blue'>{total_actual}<br>Total Actual</div>", unsafe_allow_html=True)
+    c3.markdown(f"<div class='kpi-box green'>{achievement}%<br>Achievement</div>", unsafe_allow_html=True)
+    c4.markdown(f"<div class='kpi-box amber'>{rejection}%<br>Rejection</div>", unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # ---------------- MAIN PANELS ----------------
+    col1,col2,col3 = st.columns([1.2,1,1])
+
+    # Plant Performance
     with col1:
-        st.markdown(f"<div class='kpi-card'><div class='big-font'>{total_plan}</div>Total Plan</div>", unsafe_allow_html=True)
+        st.markdown("<div class='panel'><h3>Plant Performance</h3>", unsafe_allow_html=True)
 
+        plant_df = df.groupby("plant").agg({"plan":"sum","actual":"sum"}).reset_index()
+        plant_df["Ach %"] = round((plant_df["actual"]/plant_df["plan"])*100,1)
+
+        for _,row in plant_df.iterrows():
+            color = "green" if row["Ach %"]>=95 else "orange" if row["Ach %"]>=90 else "red"
+            st.markdown(f"<p style='color:{color};font-size:20px;'><b>{row['plant']}</b> - {row['Ach %']}%</p>", unsafe_allow_html=True)
+
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    # Category Panels
     with col2:
-        st.markdown(f"<div class='kpi-card'><div class='big-font'>{total_actual}</div>Total Actual</div>", unsafe_allow_html=True)
+        st.markdown("<div class='panel'><h3>Chimney</h3>", unsafe_allow_html=True)
+        chim = df[df["category"]=="Chimney"]
+        if not chim.empty:
+            ach = round((chim["actual"].sum()/chim["plan"].sum())*100,1)
+            st.markdown(f"<h2>{ach}%</h2>", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
 
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        st.markdown("<div class='panel'><h3>Burner</h3>", unsafe_allow_html=True)
+        bur = df[df["category"]=="Burner"]
+        if not bur.empty:
+            ach2 = round((bur["actual"].sum()/bur["plan"].sum())*100,1)
+            st.markdown(f"<h2>{ach2}%</h2>", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    # Alerts Panel
     with col3:
-        st.markdown(f"<div class='kpi-card'><div class='big-font'>{achievement}%</div>Achievement</div>", unsafe_allow_html=True)
+        st.markdown("<div class='panel'><h3>Alerts</h3>", unsafe_allow_html=True)
 
-    with col4:
-        st.markdown(f"<div class='kpi-card'><div class='big-font'>{rejection}%</div>Rejection</div>", unsafe_allow_html=True)
+        if achievement < 90:
+            st.markdown("<p style='color:red;'>🔴 Achievement below 90%</p>", unsafe_allow_html=True)
 
-    st.markdown("---")
+        if rejection > 5:
+            st.markdown("<p style='color:orange;'>⚠ High Rejection</p>", unsafe_allow_html=True)
 
-    # ---------- PLANT PERFORMANCE ----------
-    st.markdown("<h2 style='color:white;'>Plant Performance</h2>", unsafe_allow_html=True)
+        if achievement >= 95:
+            st.markdown("<p style='color:lightgreen;'>✅ Performing Well</p>", unsafe_allow_html=True)
 
-    plant_df = df.groupby("plant").agg({"plan":"sum","actual":"sum"}).reset_index()
-    plant_df["Achievement %"] = round((plant_df["actual"]/plant_df["plan"])*100,2)
+        st.markdown("</div>", unsafe_allow_html=True)
 
-    st.dataframe(plant_df, use_container_width=True)
+    st.markdown("<br>", unsafe_allow_html=True)
 
-    # ---------- CATEGORY PERFORMANCE ----------
-    st.markdown("<h2 style='color:white;'>Category Performance</h2>", unsafe_allow_html=True)
-
-    cat_df = df.groupby("category").agg({"plan":"sum","actual":"sum"}).reset_index()
-    cat_df["Achievement %"] = round((cat_df["actual"]/cat_df["plan"])*100,2)
-
-    st.dataframe(cat_df, use_container_width=True)
-
-    # ---------- WEEKLY TREND ----------
-    st.markdown("<h2 style='color:white;'>Weekly Trend</h2>", unsafe_allow_html=True)
+    # ---------------- BOTTOM CHARTS ----------------
+    st.markdown("<h3 style='color:white;'>Production Trend</h3>", unsafe_allow_html=True)
 
     weekly = pd.read_sql("SELECT * FROM production", get_conn())
     weekly["date"] = pd.to_datetime(weekly["date"])
     weekly = weekly.groupby("date").sum().reset_index()
 
     st.line_chart(weekly.set_index("date")[["plan","actual"]])
-
 # ---------------- USER MANAGEMENT ----------------
 
 if menu == "User Management" and st.session_state.user[3] == "Admin":
@@ -227,3 +274,4 @@ if menu == "User Management" and st.session_state.user[3] == "Admin":
         except:
 
             st.error("User already exists")
+
