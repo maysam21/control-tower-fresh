@@ -3,6 +3,7 @@ import pandas as pd
 import sqlite3
 import hashlib
 from datetime import datetime
+import plotly.graph_objects as go
 
 st.set_page_config(layout="wide")
 
@@ -38,7 +39,6 @@ def init_db():
 
     conn.commit()
 
-    # Default admin
     if c.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 0:
         c.execute(
             "INSERT INTO users(username,password,role,plant) VALUES (?,?,?,?)",
@@ -59,7 +59,6 @@ if "user" not in st.session_state:
     st.session_state.user = None
 
 def login():
-
     st.title("Manufacturing Control Tower Login")
 
     username = st.text_input("Username")
@@ -80,28 +79,31 @@ def login():
                 "plant": user[4]
             }
             st.success("Login Successful")
+            st.experimental_rerun()
         else:
             st.error("Invalid Credentials")
-
 
 if st.session_state.user is None:
     login()
     st.stop()
-# ---------------- MENU ----------------
+
+# ---------------- CONSTANTS ----------------
 
 PLANTS = ["JD","Snoair","APT","SP","Inhouse"]
 CATEGORIES = ["Chimney","Burner"]
 
-st.sidebar.write("Logged in:", st.session_state.user[1])
+st.sidebar.write("Logged in:", st.session_state.user["username"])
 menu = st.sidebar.selectbox("Menu", ["Dashboard","Entry","User Management"])
 
 # ---------------- ENTRY ----------------
 
 if menu == "Entry":
+
     st.title("Shift Entry")
 
-    plant = st.session_state.user[4]
-    if st.session_state.user[3] == "Admin":
+    plant = st.session_state.user["plant"]
+
+    if st.session_state.user["role"] == "Admin":
         plant = st.selectbox("Plant", PLANTS)
 
     date = st.date_input("Date", datetime.today())
@@ -120,39 +122,33 @@ if menu == "Entry":
         """, (str(date), plant, category, plan, actual))
         conn.commit()
         conn.close()
-        st.success("Saved")
+        st.success("Saved Successfully")
 
-# ---------------- CONTROL TOWER DASHBOARD ----------------
+# ---------------- DASHBOARD ----------------
 
 if menu == "Dashboard":
 
     st.markdown("""
     <style>
-    .stApp {
-        background-color: #0b1622;
-    }
-
+    .stApp { background-color: #0b1622; }
     .title {
-        font-size: 48px;
+        font-size: 42px;
         font-weight: 700;
         color: white;
         text-align: center;
-        letter-spacing: 2px;
-        margin-bottom: 10px;
+        margin-bottom: 20px;
     }
-
     .kpi-box {
-        padding: 25px;
-        border-radius: 10px;
+        padding: 20px;
+        border-radius: 12px;
         text-align: center;
-        font-size: 22px;
+        font-size: 20px;
         font-weight: 600;
         color: white;
     }
-
     .blue {background: linear-gradient(135deg,#1e3a8a,#1e293b);}
-    .amber {background: linear-gradient(135deg,#f59e0b,#b45309);}
     .green {background: linear-gradient(135deg,#16a34a,#065f46);}
+    .amber {background: linear-gradient(135deg,#f59e0b,#b45309);}
     .panel {
         background: #132235;
         padding: 20px;
@@ -178,12 +174,12 @@ if menu == "Dashboard":
 
     total_plan = df["plan"].sum()
     total_actual = df["actual"].sum()
+
     achievement = round((total_actual/total_plan)*100,2) if total_plan>0 else 0
     rejection = round(((total_plan-total_actual)/total_plan)*100,2) if total_plan>0 else 0
 
-    # ---------------- KPI STRIP ----------------
+    # KPI Row
     c1,c2,c3,c4 = st.columns(4)
-
     c1.markdown(f"<div class='kpi-box blue'>{total_plan}<br>Total Plan</div>", unsafe_allow_html=True)
     c2.markdown(f"<div class='kpi-box blue'>{total_actual}<br>Total Actual</div>", unsafe_allow_html=True)
     c3.markdown(f"<div class='kpi-box green'>{achievement}%<br>Achievement</div>", unsafe_allow_html=True)
@@ -191,104 +187,59 @@ if menu == "Dashboard":
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # ---------------- MAIN PANELS ----------------
     col1,col2,col3 = st.columns([1.2,1,1])
 
     # Plant Performance
     with col1:
         st.markdown("<div class='panel'><h3>Plant Performance</h3>", unsafe_allow_html=True)
-
         plant_df = df.groupby("plant").agg({"plan":"sum","actual":"sum"}).reset_index()
         plant_df["Ach %"] = round((plant_df["actual"]/plant_df["plan"])*100,1)
-
         for _,row in plant_df.iterrows():
-            color = "green" if row["Ach %"]>=95 else "orange" if row["Ach %"]>=90 else "red"
-            st.markdown(f"<p style='color:{color};font-size:20px;'><b>{row['plant']}</b> - {row['Ach %']}%</p>", unsafe_allow_html=True)
-
+            color = "lightgreen" if row["Ach %"]>=95 else "orange" if row["Ach %"]>=90 else "red"
+            st.markdown(f"<p style='color:{color};font-size:18px;'><b>{row['plant']}</b> - {row['Ach %']}%</p>", unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
     # Category Panels
     with col2:
-        st.markdown("<div class='panel'><h3>Chimney</h3>", unsafe_allow_html=True)
-        chim = df[df["category"]=="Chimney"]
-        if not chim.empty:
-            ach = round((chim["actual"].sum()/chim["plan"].sum())*100,1)
-            st.markdown(f"<h2>{ach}%</h2>", unsafe_allow_html=True)
-        st.markdown("</div>", unsafe_allow_html=True)
+        for cat in CATEGORIES:
+            st.markdown(f"<div class='panel'><h3>{cat}</h3>", unsafe_allow_html=True)
+            cat_df = df[df["category"]==cat]
+            if not cat_df.empty:
+                ach = round((cat_df["actual"].sum()/cat_df["plan"].sum())*100,1)
+                st.markdown(f"<h2>{ach}%</h2>", unsafe_allow_html=True)
+            st.markdown("</div><br>", unsafe_allow_html=True)
 
-        st.markdown("<br>", unsafe_allow_html=True)
-
-        st.markdown("<div class='panel'><h3>Burner</h3>", unsafe_allow_html=True)
-        bur = df[df["category"]=="Burner"]
-        if not bur.empty:
-            ach2 = round((bur["actual"].sum()/bur["plan"].sum())*100,1)
-            st.markdown(f"<h2>{ach2}%</h2>", unsafe_allow_html=True)
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    # Alerts Panel
+    # Alerts
     with col3:
         st.markdown("<div class='panel'><h3>Alerts</h3>", unsafe_allow_html=True)
-
         if achievement < 90:
             st.markdown("<p style='color:red;'>🔴 Achievement below 90%</p>", unsafe_allow_html=True)
-
         if rejection > 5:
             st.markdown("<p style='color:orange;'>⚠ High Rejection</p>", unsafe_allow_html=True)
-
         if achievement >= 95:
             st.markdown("<p style='color:lightgreen;'>✅ Performing Well</p>", unsafe_allow_html=True)
-
         st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # ---------------- BOTTOM CHARTS ----------------
+    # Trend Chart
     st.markdown("<h3 style='color:white;'>Production Trend</h3>", unsafe_allow_html=True)
 
     weekly = pd.read_sql("SELECT * FROM production", get_conn())
     weekly["date"] = pd.to_datetime(weekly["date"])
-    weekly = weekly.groupby("date").sum().reset_index()
+    weekly = weekly.groupby("date").sum(numeric_only=True).reset_index()
 
-    import plotly.graph_objects as go
+    if not weekly.empty:
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=weekly["date"], y=weekly["plan"], mode='lines+markers', name='Plan'))
+        fig.add_trace(go.Scatter(x=weekly["date"], y=weekly["actual"], mode='lines+markers', name='Actual'))
+        fig.update_layout(template="plotly_dark", height=400)
+        st.plotly_chart(fig, use_container_width=True)
 
-st.markdown("<h3 style='color:white;'>Production Trend</h3>", unsafe_allow_html=True)
-
-weekly = pd.read_sql("SELECT * FROM production", get_conn())
-weekly["date"] = pd.to_datetime(weekly["date"])
-weekly = weekly.groupby("date").sum(numeric_only=True).reset_index()
-
-if not weekly.empty:
-
-    fig = go.Figure()
-
-    fig.add_trace(go.Scatter(
-        x=weekly["date"],
-        y=weekly["plan"],
-        mode='lines+markers',
-        name='Plan',
-        line=dict(width=3)
-    ))
-
-    fig.add_trace(go.Scatter(
-        x=weekly["date"],
-        y=weekly["actual"],
-        mode='lines+markers',
-        name='Actual',
-        line=dict(width=3)
-    ))
-
-    fig.update_layout(
-        template="plotly_dark",
-        plot_bgcolor="#0b1622",
-        paper_bgcolor="#0b1622",
-        font=dict(size=16),
-        height=400
-    )
-
-    st.plotly_chart(fig, use_container_width=True)
 # ---------------- USER MANAGEMENT ----------------
 
-if menu == "User Management" and st.session_state.user[3] == "Admin":
+if menu == "User Management" and st.session_state.user["role"] == "Admin":
+
     st.title("User Management")
 
     conn = get_conn()
@@ -315,8 +266,4 @@ if menu == "User Management" and st.session_state.user[3] == "Admin":
             conn.close()
             st.success("User Created")
         except:
-
             st.error("User already exists")
-
-
-
