@@ -93,7 +93,6 @@ if menu == "Shift Entry":
 
 if menu == "Dashboard":
 
-    # ---------- Styling ----------
     st.markdown("""
     <style>
     .stApp { background-color: #0b1622; }
@@ -136,38 +135,44 @@ if menu == "Dashboard":
     selected_date = st.date_input("Select Date", datetime.today())
     df = df[df["date"] == selected_date]
 
+    # Ensure numeric
+    df["plan"] = pd.to_numeric(df["plan"], errors="coerce")
+    df["actual"] = pd.to_numeric(df["actual"], errors="coerce")
+
     total_plan = df["plan"].sum()
     total_actual = df["actual"].sum()
 
-    achievement = round((total_actual/total_plan)*100,2) if total_plan>0 else 0
-    rejection = round(((total_plan-total_actual)/total_plan)*100,2) if total_plan>0 else 0
+    achievement = round((total_actual / total_plan) * 100, 2) if total_plan > 0 else 0
+    rejection = round(((total_plan - total_actual) / total_plan) * 100, 2) if total_plan > 0 else 0
 
-    # ---------- KPI STRIP ----------
+    # KPI STRIP
     c1,c2,c3,c4 = st.columns(4)
-    c1.markdown(f"<div class='kpi-box blue'>{total_plan}<br>Total Plan</div>", unsafe_allow_html=True)
-    c2.markdown(f"<div class='kpi-box blue'>{total_actual}<br>Total Actual</div>", unsafe_allow_html=True)
+    c1.markdown(f"<div class='kpi-box blue'>{int(total_plan)}<br>Total Plan</div>", unsafe_allow_html=True)
+    c2.markdown(f"<div class='kpi-box blue'>{int(total_actual)}<br>Total Actual</div>", unsafe_allow_html=True)
     c3.markdown(f"<div class='kpi-box green'>{achievement}%<br>Achievement</div>", unsafe_allow_html=True)
     c4.markdown(f"<div class='kpi-box amber'>{rejection}%<br>Rejection</div>", unsafe_allow_html=True)
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # ---------- MAIN PANELS ----------
     col1,col2,col3 = st.columns([1.2,1,1])
 
     # Plant Performance
     with col1:
         st.markdown("<div class='panel'><h3>Plant Performance</h3>", unsafe_allow_html=True)
-        plant_df = df.groupby("plant").agg({"plan":"sum","actual":"sum"}).reset_index()
 
+        plant_df = df.groupby("plant").agg({"plan":"sum","actual":"sum"}).reset_index()
         plant_df["plan"] = pd.to_numeric(plant_df["plan"], errors="coerce")
         plant_df["actual"] = pd.to_numeric(plant_df["actual"], errors="coerce")
 
-        plant_df["Ach %"] = ((plant_df["actual"] / plant_df["plan"]) * 100).round(1)
+        plant_df["Ach %"] = (
+            (plant_df["actual"] / plant_df["plan"]) * 100
+        ).round(1)
 
         for _,row in plant_df.iterrows():
-            color = "lightgreen" if row["Ach %"]>=95 else "orange" if row["Ach %"]>=90 else "red"
+            ach_val = row["Ach %"] if pd.notna(row["Ach %"]) else 0
+            color = "lightgreen" if ach_val>=95 else "orange" if ach_val>=90 else "red"
             st.markdown(
-                f"<p style='color:{color};font-size:20px;'><b>{row['plant']}</b> - {row['Ach %']}%</p>",
+                f"<p style='color:{color};font-size:20px;'><b>{row['plant']}</b> - {ach_val}%</p>",
                 unsafe_allow_html=True
             )
         st.markdown("</div>", unsafe_allow_html=True)
@@ -176,49 +181,50 @@ if menu == "Dashboard":
     with col2:
         for cat in CATEGORIES:
             st.markdown(f"<div class='panel'><h3>{cat}</h3>", unsafe_allow_html=True)
-            cat_df = df[df["category"]==cat]
+
+            cat_df = df[df["category"] == cat]
+
             if not cat_df.empty:
                 plan_sum = pd.to_numeric(cat_df["plan"], errors="coerce").sum()
-actual_sum = pd.to_numeric(cat_df["actual"], errors="coerce").sum()
+                actual_sum = pd.to_numeric(cat_df["actual"], errors="coerce").sum()
 
-ach = round((actual_sum / plan_sum) * 100, 1) if plan_sum > 0 else 0
+                ach = round((actual_sum / plan_sum) * 100, 1) if plan_sum > 0 else 0
                 st.markdown(f"<h2>{ach}%</h2>", unsafe_allow_html=True)
+            else:
+                st.markdown("<h2>0%</h2>", unsafe_allow_html=True)
+
             st.markdown("</div><br>", unsafe_allow_html=True)
 
     # Alerts
     with col3:
         st.markdown("<div class='panel'><h3>Alerts</h3>", unsafe_allow_html=True)
+
         if achievement < 90:
             st.markdown("<p style='color:red;'>🔴 Achievement below 90%</p>", unsafe_allow_html=True)
+
         if rejection > 5:
             st.markdown("<p style='color:orange;'>⚠ High Rejection</p>", unsafe_allow_html=True)
+
         if achievement >= 95:
             st.markdown("<p style='color:lightgreen;'>✅ Performing Well</p>", unsafe_allow_html=True)
+
         st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # ---------- PRODUCTION TREND ----------
+    # Production Trend
     st.markdown("<h3 style='color:white;'>Production Trend</h3>", unsafe_allow_html=True)
 
     weekly = st.session_state.production.copy()
     weekly["date"] = pd.to_datetime(weekly["date"])
+    weekly["plan"] = pd.to_numeric(weekly["plan"], errors="coerce")
+    weekly["actual"] = pd.to_numeric(weekly["actual"], errors="coerce")
+
     weekly = weekly.groupby("date").sum(numeric_only=True).reset_index()
 
     if not weekly.empty:
         fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=weekly["date"],
-            y=weekly["plan"],
-            mode='lines+markers',
-            name='Plan'
-        ))
-        fig.add_trace(go.Scatter(
-            x=weekly["date"],
-            y=weekly["actual"],
-            mode='lines+markers',
-            name='Actual'
-        ))
+        fig.add_trace(go.Scatter(x=weekly["date"], y=weekly["plan"], mode='lines+markers', name='Plan'))
+        fig.add_trace(go.Scatter(x=weekly["date"], y=weekly["actual"], mode='lines+markers', name='Actual'))
         fig.update_layout(template="plotly_dark", height=450)
         st.plotly_chart(fig, use_container_width=True)
-
