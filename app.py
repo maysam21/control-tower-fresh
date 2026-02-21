@@ -15,12 +15,18 @@ if "production" not in st.session_state:
         columns=["date","plant","category","plan","actual"]
     )
 
-# ---------------- SIMPLE LOGIN ----------------
+# ---------------- USER DATABASE ----------------
 
 USERS = {
     "admin": {"password": "admin123", "role": "Admin", "plant": "All"},
-    "jd_user": {"password": "1234", "role": "Supervisor", "plant": "JD"},
+    "jd_supervisor": {"password": "1234", "role": "Supervisor", "plant": "JD"},
+    "snoair_supervisor": {"password": "1234", "role": "Supervisor", "plant": "Snoair"},
 }
+
+PLANTS = ["JD","Snoair","APT","SP","Inhouse"]
+CATEGORIES = ["Chimney","Burner"]
+
+# ---------------- LOGIN ----------------
 
 def login():
     st.title("MANUFACTURING CONTROL TOWER")
@@ -42,25 +48,34 @@ if st.session_state.user is None:
     login()
     st.stop()
 
-# ---------------- CONSTANTS ----------------
-
-PLANTS = ["JD","Snoair","APT","SP","Inhouse"]
-CATEGORIES = ["Chimney","Burner"]
-
-st.sidebar.write("Logged in:", st.session_state.user["username"])
-menu = st.sidebar.selectbox("Menu", ["Dashboard","Shift Entry"])
+user = st.session_state.user
 
 # =========================================================
-# SHIFT ENTRY PAGE
+# ROLE BASED MENU CONTROL
+# =========================================================
+
+if user["role"] == "Admin":
+    menu = st.sidebar.selectbox("Menu", ["Dashboard","Shift Entry"])
+else:
+    menu = "Shift Entry"   # Supervisor sees only entry
+
+st.sidebar.write("Logged in:", user["username"])
+st.sidebar.write("Role:", user["role"])
+st.sidebar.write("Plant:", user["plant"])
+
+# =========================================================
+# SHIFT ENTRY (Supervisor & Admin)
 # =========================================================
 
 if menu == "Shift Entry":
 
     st.title("SHIFT ENTRY")
 
-    plant = st.session_state.user["plant"]
-
-    if st.session_state.user["role"] == "Admin":
+    # Supervisor fixed plant
+    if user["role"] == "Supervisor":
+        plant = user["plant"]
+        st.subheader(f"Plant: {plant}")
+    else:
         plant = st.selectbox("Plant", PLANTS)
 
     date = st.date_input("Date", datetime.today())
@@ -88,26 +103,26 @@ if menu == "Shift Entry":
         st.success("Entry Saved Successfully")
 
 # =========================================================
-# CONTROL TOWER DASHBOARD
+# DASHBOARD (Admin Only)
 # =========================================================
 
-if menu == "Dashboard":
+if menu == "Dashboard" and user["role"] == "Admin":
 
     st.markdown("""
     <style>
     .stApp { background-color: #0b1622; }
     .main-title {
-        font-size: 44px;
+        font-size: 42px;
         font-weight: 800;
         color: white;
         text-align: center;
         margin-bottom: 20px;
     }
     .kpi-box {
-        padding: 25px;
-        border-radius: 14px;
+        padding: 20px;
+        border-radius: 12px;
         text-align: center;
-        font-size: 24px;
+        font-size: 22px;
         font-weight: 700;
         color: white;
     }
@@ -117,7 +132,7 @@ if menu == "Dashboard":
     .panel {
         background: #132235;
         padding: 20px;
-        border-radius: 14px;
+        border-radius: 12px;
         color: white;
     }
     </style>
@@ -132,18 +147,18 @@ if menu == "Dashboard":
         st.stop()
 
     df["date"] = pd.to_datetime(df["date"]).dt.date
+
     selected_date = st.date_input("Select Date", datetime.today())
     df = df[df["date"] == selected_date]
 
-    # Ensure numeric
     df["plan"] = pd.to_numeric(df["plan"], errors="coerce")
     df["actual"] = pd.to_numeric(df["actual"], errors="coerce")
 
     total_plan = df["plan"].sum()
     total_actual = df["actual"].sum()
 
-    achievement = round((total_actual / total_plan) * 100, 2) if total_plan > 0 else 0
-    rejection = round(((total_plan - total_actual) / total_plan) * 100, 2) if total_plan > 0 else 0
+    achievement = round((total_actual/total_plan)*100,2) if total_plan>0 else 0
+    rejection = round(((total_plan-total_actual)/total_plan)*100,2) if total_plan>0 else 0
 
     # KPI STRIP
     c1,c2,c3,c4 = st.columns(4)
@@ -154,77 +169,20 @@ if menu == "Dashboard":
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    col1,col2,col3 = st.columns([1.2,1,1])
-
     # Plant Performance
-    with col1:
-        st.markdown("<div class='panel'><h3>Plant Performance</h3>", unsafe_allow_html=True)
+    st.markdown("<div class='panel'><h3>Plant Performance</h3>", unsafe_allow_html=True)
 
-        plant_df = df.groupby("plant").agg({"plan":"sum","actual":"sum"}).reset_index()
-        plant_df["plan"] = pd.to_numeric(plant_df["plan"], errors="coerce")
-        plant_df["actual"] = pd.to_numeric(plant_df["actual"], errors="coerce")
+    plant_df = df.groupby("plant").agg({"plan":"sum","actual":"sum"}).reset_index()
+    plant_df["plan"] = pd.to_numeric(plant_df["plan"], errors="coerce")
+    plant_df["actual"] = pd.to_numeric(plant_df["actual"], errors="coerce")
+    plant_df["Ach %"] = ((plant_df["actual"]/plant_df["plan"])*100).round(1)
 
-        plant_df["Ach %"] = (
-            (plant_df["actual"] / plant_df["plan"]) * 100
-        ).round(1)
+    for _,row in plant_df.iterrows():
+        ach_val = row["Ach %"] if pd.notna(row["Ach %"]) else 0
+        color = "lightgreen" if ach_val>=95 else "orange" if ach_val>=90 else "red"
+        st.markdown(
+            f"<p style='color:{color};font-size:18px;'><b>{row['plant']}</b> - {ach_val}%</p>",
+            unsafe_allow_html=True
+        )
 
-        for _,row in plant_df.iterrows():
-            ach_val = row["Ach %"] if pd.notna(row["Ach %"]) else 0
-            color = "lightgreen" if ach_val>=95 else "orange" if ach_val>=90 else "red"
-            st.markdown(
-                f"<p style='color:{color};font-size:20px;'><b>{row['plant']}</b> - {ach_val}%</p>",
-                unsafe_allow_html=True
-            )
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    # Category Panels
-    with col2:
-        for cat in CATEGORIES:
-            st.markdown(f"<div class='panel'><h3>{cat}</h3>", unsafe_allow_html=True)
-
-            cat_df = df[df["category"] == cat]
-
-            if not cat_df.empty:
-                plan_sum = pd.to_numeric(cat_df["plan"], errors="coerce").sum()
-                actual_sum = pd.to_numeric(cat_df["actual"], errors="coerce").sum()
-
-                ach = round((actual_sum / plan_sum) * 100, 1) if plan_sum > 0 else 0
-                st.markdown(f"<h2>{ach}%</h2>", unsafe_allow_html=True)
-            else:
-                st.markdown("<h2>0%</h2>", unsafe_allow_html=True)
-
-            st.markdown("</div><br>", unsafe_allow_html=True)
-
-    # Alerts
-    with col3:
-        st.markdown("<div class='panel'><h3>Alerts</h3>", unsafe_allow_html=True)
-
-        if achievement < 90:
-            st.markdown("<p style='color:red;'>🔴 Achievement below 90%</p>", unsafe_allow_html=True)
-
-        if rejection > 5:
-            st.markdown("<p style='color:orange;'>⚠ High Rejection</p>", unsafe_allow_html=True)
-
-        if achievement >= 95:
-            st.markdown("<p style='color:lightgreen;'>✅ Performing Well</p>", unsafe_allow_html=True)
-
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    # Production Trend
-    st.markdown("<h3 style='color:white;'>Production Trend</h3>", unsafe_allow_html=True)
-
-    weekly = st.session_state.production.copy()
-    weekly["date"] = pd.to_datetime(weekly["date"])
-    weekly["plan"] = pd.to_numeric(weekly["plan"], errors="coerce")
-    weekly["actual"] = pd.to_numeric(weekly["actual"], errors="coerce")
-
-    weekly = weekly.groupby("date").sum(numeric_only=True).reset_index()
-
-    if not weekly.empty:
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(x=weekly["date"], y=weekly["plan"], mode='lines+markers', name='Plan'))
-        fig.add_trace(go.Scatter(x=weekly["date"], y=weekly["actual"], mode='lines+markers', name='Actual'))
-        fig.update_layout(template="plotly_dark", height=450)
-        st.plotly_chart(fig, use_container_width=True)
+    st.markdown("</div>", unsafe_allow_html=True)
