@@ -78,15 +78,12 @@ def login():
                 "role": user[3],
                 "plant": user[4]
             }
-            st.success("Login Successful")
-            st.experimental_rerun()
         else:
             st.error("Invalid Credentials")
 
 if st.session_state.user is None:
     login()
     st.stop()
-
 # ---------------- CONSTANTS ----------------
 
 PLANTS = ["JD","Snoair","APT","SP","Inhouse"]
@@ -267,3 +264,4 @@ if menu == "User Management" and st.session_state.user["role"] == "Admin":
             st.success("User Created")
         except:
             st.error("User already exists")
+
