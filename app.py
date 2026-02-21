@@ -158,7 +158,11 @@ if menu == "Dashboard":
     with col1:
         st.markdown("<div class='panel'><h3>Plant Performance</h3>", unsafe_allow_html=True)
         plant_df = df.groupby("plant").agg({"plan":"sum","actual":"sum"}).reset_index()
-        plant_df["Ach %"] = round((plant_df["actual"]/plant_df["plan"])*100,1)
+
+        plant_df["plan"] = pd.to_numeric(plant_df["plan"], errors="coerce")
+        plant_df["actual"] = pd.to_numeric(plant_df["actual"], errors="coerce")
+
+        plant_df["Ach %"] = ((plant_df["actual"] / plant_df["plan"]) * 100).round(1)
 
         for _,row in plant_df.iterrows():
             color = "lightgreen" if row["Ach %"]>=95 else "orange" if row["Ach %"]>=90 else "red"
@@ -174,7 +178,10 @@ if menu == "Dashboard":
             st.markdown(f"<div class='panel'><h3>{cat}</h3>", unsafe_allow_html=True)
             cat_df = df[df["category"]==cat]
             if not cat_df.empty:
-                ach = round((cat_df["actual"].sum()/cat_df["plan"].sum())*100,1)
+                plan_sum = pd.to_numeric(cat_df["plan"], errors="coerce").sum()
+actual_sum = pd.to_numeric(cat_df["actual"], errors="coerce").sum()
+
+ach = round((actual_sum / plan_sum) * 100, 1) if plan_sum > 0 else 0
                 st.markdown(f"<h2>{ach}%</h2>", unsafe_allow_html=True)
             st.markdown("</div><br>", unsafe_allow_html=True)
 
@@ -214,3 +221,4 @@ if menu == "Dashboard":
         ))
         fig.update_layout(template="plotly_dark", height=450)
         st.plotly_chart(fig, use_container_width=True)
+
