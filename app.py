@@ -242,7 +242,43 @@ if menu == "Dashboard":
     weekly["date"] = pd.to_datetime(weekly["date"])
     weekly = weekly.groupby("date").sum().reset_index()
 
-    st.line_chart(weekly.set_index("date")[["plan","actual"]])
+    import plotly.graph_objects as go
+
+st.markdown("<h3 style='color:white;'>Production Trend</h3>", unsafe_allow_html=True)
+
+weekly = pd.read_sql("SELECT * FROM production", get_conn())
+weekly["date"] = pd.to_datetime(weekly["date"])
+weekly = weekly.groupby("date").sum(numeric_only=True).reset_index()
+
+if not weekly.empty:
+
+    fig = go.Figure()
+
+    fig.add_trace(go.Scatter(
+        x=weekly["date"],
+        y=weekly["plan"],
+        mode='lines+markers',
+        name='Plan',
+        line=dict(width=3)
+    ))
+
+    fig.add_trace(go.Scatter(
+        x=weekly["date"],
+        y=weekly["actual"],
+        mode='lines+markers',
+        name='Actual',
+        line=dict(width=3)
+    ))
+
+    fig.update_layout(
+        template="plotly_dark",
+        plot_bgcolor="#0b1622",
+        paper_bgcolor="#0b1622",
+        font=dict(size=16),
+        height=400
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
 # ---------------- USER MANAGEMENT ----------------
 
 if menu == "User Management" and st.session_state.user[3] == "Admin":
@@ -274,4 +310,5 @@ if menu == "User Management" and st.session_state.user[3] == "Admin":
         except:
 
             st.error("User already exists")
+
 
