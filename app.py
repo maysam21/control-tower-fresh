@@ -140,36 +140,33 @@ if menu == "Shift Entry":
 
 if menu == "Dashboard":
 
-    st.markdown("## EXECUTIVE CONTROL TOWER")
+    st.markdown("## 🏢 EXECUTIVE CONTROL TOWER")
 
     conn = get_connection()
     df = pd.read_sql("SELECT * FROM production", conn)
     conn.close()
 
     if df.empty:
-        st.warning("No data available")
+        st.warning("No production data available")
         st.stop()
 
     df["date"] = pd.to_datetime(df["date"])
 
-    # ----------- DATE FILTER -----------
     selected_date = st.date_input("Select Date", datetime.today())
+
+    # ---------------- TODAY DATA ----------------
     today_df = df[df["date"].dt.date == selected_date]
 
-    # ----------- MTD DATA -----------
-    current_month = selected_date.month
-    current_year = selected_date.year
-
+    # ---------------- MTD DATA ----------------
     mtd_df = df[
-        (df["date"].dt.month == current_month) &
-        (df["date"].dt.year == current_year)
+        (df["date"].dt.month == selected_date.month) &
+        (df["date"].dt.year == selected_date.year)
     ]
 
-    # ----------- KPI SECTION -----------
+    # ---------------- KPI SECTION ----------------
 
     total_today_plan = today_df["plan"].sum()
     total_today_actual = today_df["actual"].sum()
-
     total_mtd_plan = mtd_df["plan"].sum()
     total_mtd_actual = mtd_df["actual"].sum()
 
@@ -184,7 +181,9 @@ if menu == "Dashboard":
 
     st.markdown("---")
 
-    # ----------- PLANT RANKING -----------
+    # ---------------- PLANT RANKING ----------------
+
+    st.subheader("📊 Plant Performance Ranking")
 
     plant_df = today_df.groupby("plant").sum(numeric_only=True).reset_index()
     plant_df["Achievement %"] = (
@@ -193,10 +192,49 @@ if menu == "Dashboard":
 
     plant_df = plant_df.sort_values("Achievement %", ascending=False)
 
-    st.subheader("Plant Performance Ranking")
-    st.dataframe(plant_df, use_container_width=True)
+    def highlight(row):
+        if row["Achievement %"] >= 95:
+            return ["background-color: #14532d"] * len(row)
+        elif row["Achievement %"] >= 90:
+            return ["background-color: #78350f"] * len(row)
+        else:
+            return ["background-color: #7f1d1d"] * len(row)
 
-    # ----------- TREND GRAPH -----------
+    st.dataframe(
+        plant_df.style.apply(highlight, axis=1),
+        use_container_width=True
+    )
+
+    st.markdown("---")
+
+    # ---------------- CATEGORY PERFORMANCE ----------------
+
+    st.subheader("🏭 Category Performance")
+
+    cat_df = today_df.groupby("category").sum(numeric_only=True).reset_index()
+    cat_df["Achievement %"] = (
+        (cat_df["actual"]/cat_df["plan"])*100
+    ).round(1)
+
+    col1,col2 = st.columns(2)
+
+    with col1:
+        st.dataframe(cat_df, use_container_width=True)
+
+    with col2:
+        fig_cat = go.Figure()
+        fig_cat.add_trace(go.Bar(
+            x=cat_df["category"],
+            y=cat_df["Achievement %"]
+        ))
+        fig_cat.update_layout(template="plotly_dark", height=350)
+        st.plotly_chart(fig_cat, use_container_width=True)
+
+    st.markdown("---")
+
+    # ---------------- WEEKLY TREND ----------------
+
+    st.subheader("📈 Weekly Production Trend")
 
     weekly = df.groupby("date").sum(numeric_only=True).reset_index()
 
@@ -207,13 +245,26 @@ if menu == "Dashboard":
         mode="lines+markers",
         name="Actual"
     ))
-    fig.update_layout(
-        template="plotly_dark",
-        height=450
-    )
+    fig.update_layout(template="plotly_dark", height=450)
 
     st.plotly_chart(fig, use_container_width=True)
 
+    st.markdown("---")
+
+    # ---------------- EXPORT REPORT ----------------
+
+    st.subheader("📤 Export Report")
+
+    export_df = today_df.copy()
+
+    csv = export_df.to_csv(index=False).encode("utf-8")
+
+    st.download_button(
+        label="Download Today's Report (CSV)",
+        data=csv,
+        file_name="today_production_report.csv",
+        mime="text/csv"
+    )
 # =====================================================
 # USER MANAGEMENT
 # =====================================================
@@ -246,4 +297,5 @@ if menu == "User Management":
         except:
             st.error("User already exists")
         conn.close()
+
 
