@@ -4,12 +4,15 @@ import sqlite3
 from datetime import datetime
 import plotly.graph_objects as go
 
+st.set_option('server.runOnSave', False)
+
 st.set_page_config(layout="wide")
 
 # =====================================================
 # DATABASE
 # =====================================================
 
+@st.cache_resource
 def get_connection():
     return sqlite3.connect("control_tower_v2.db", check_same_thread=False)
 
@@ -57,7 +60,6 @@ def init_db():
                   ("admin","admin123","Admin","All"))
 
     conn.commit()
-    conn.close()
 
 init_db()
 
@@ -118,7 +120,6 @@ def login():
         c.execute("SELECT * FROM users WHERE username=? AND password=?",
                   (username,password))
         user = c.fetchone()
-        conn.close()
 
         if user:
             st.session_state.user = {
@@ -174,7 +175,6 @@ if menu == "Shift Entry":
     conn = get_connection()
     sku_df = pd.read_sql("SELECT sku FROM sku_master WHERE plant=?",
                          conn, params=(plant,))
-    conn.close()
 
     if not sku_df.empty:
         sku = st.selectbox("SKU", sku_df["sku"])
@@ -194,7 +194,6 @@ if menu == "Shift Entry":
         VALUES (?,?,?,?,?,?,?)
         """,(str(date),plant,category,sku,plan,actual,rejection))
         conn.commit()
-        conn.close()
         st.success("Saved Successfully")
 
 # =====================================================
@@ -207,7 +206,6 @@ if menu == "Executive Dashboard":
 
     conn = get_connection()
     df = pd.read_sql("SELECT * FROM production", conn)
-    conn.close()
 
     if df.empty:
         st.warning("No Production Data")
@@ -276,7 +274,6 @@ if menu == "User Management":
 
     conn = get_connection()
     users_df = pd.read_sql("SELECT username,role,plant FROM users", conn)
-    conn.close()
 
     st.dataframe(users_df, use_container_width=True)
 
@@ -298,7 +295,6 @@ if menu == "User Management":
             st.success("User Created")
         except:
             st.error("User already exists")
-        conn.close()
 
     st.markdown("---")
     st.subheader("SKU Mapping")
@@ -312,6 +308,6 @@ if menu == "User Management":
         c.execute("INSERT INTO sku_master(plant,sku) VALUES (?,?)",
                   (plant_sel,new_sku))
         conn.commit()
-        conn.close()
         st.success("SKU Added")
+
 
