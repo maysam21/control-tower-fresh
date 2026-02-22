@@ -1,276 +1,250 @@
 import streamlit as st
 import pandas as pd
-import json
-import os
+import sqlite3
 from datetime import datetime
 import plotly.graph_objects as go
 
 st.set_page_config(layout="wide")
 
 # =====================================================
-# FILE PATHS (Persistent Storage)
+# DATABASE
 # =====================================================
 
-USERS_FILE = "users.json"
-DATA_FILE = "production.json"
+def get_connection():
+    return sqlite3.connect("control_tower.db", check_same_thread=False)
 
-PLANTS = ["JD", "Snoair", "APT", "SP", "Inhouse"]
-CATEGORIES = ["Chimney", "Burner"]
+def init_db():
+    conn = get_connection()
+    c = conn.cursor()
 
-# =====================================================
-# INITIAL FILE SETUP
-# =====================================================
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS users(
+        username TEXT PRIMARY KEY,
+        password TEXT,
+        role TEXT,
+        plant TEXT
+    )
+    """)
 
-def init_files():
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS production(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        date TEXT,
+        plant TEXT,
+        category TEXT,
+        sku TEXT,
+        plan INTEGER,
+        actual INTEGER,
+        rejection INTEGER
+    )
+    """)
 
-    if not os.path.exists(USERS_FILE):
-        default_users = {
-            "admin": {
-                "password": "admin123",
-                "role": "Admin",
-                "plant": "All"
-            }
-        }
-        with open(USERS_FILE, "w") as f:
-            json.dump(default_users, f)
+    c.execute("SELECT * FROM users WHERE username='admin'")
+    if not c.fetchone():
+        c.execute("INSERT INTO users VALUES (?,?,?,?)",
+                  ("admin","admin123","Admin","All"))
 
-    if not os.path.exists(DATA_FILE):
-        with open(DATA_FILE, "w") as f:
-            json.dump([], f)
+    conn.commit()
+    conn.close()
 
-init_files()
-
-# =====================================================
-# LOAD & SAVE FUNCTIONS
-# =====================================================
-
-def load_users():
-    with open(USERS_FILE, "r") as f:
-        return json.load(f)
-
-def save_users(users):
-    with open(USERS_FILE, "w") as f:
-        json.dump(users, f)
-
-def load_data():
-    with open(DATA_FILE, "r") as f:
-        return pd.DataFrame(json.load(f))
-
-def save_data(df):
-    df["date"] = df["date"].astype(str)
-    with open(DATA_FILE, "w") as f:
-        json.dump(df.to_dict(orient="records"), f)
+init_db()
 
 # =====================================================
-# SESSION INIT
+# INDUSTRIAL CSS
+# =====================================================
+
+st.markdown("""
+<style>
+
+.stApp {
+    background-color: #f3f4f6;
+}
+
+.topbar {
+    background-color: #0f172a;
+    padding: 15px;
+    color: white;
+    font-size: 20px;
+    font-weight: 600;
+}
+
+.plant-card {
+    background-color: white;
+    border-radius: 8px;
+    padding: 15px;
+    margin-bottom: 20px;
+    box-shadow: 0px 2px 6px rgba(0,0,0,0.15);
+}
+
+.oee-green {background-color:#16a34a;color:white;padding:15px;border-radius:6px;text-align:center;font-size:24px;font-weight:700;}
+.oee-yellow {background-color:#facc15;color:black;padding:15px;border-radius:6px;text-align:center;font-size:24px;font-weight:700;}
+.oee-red {background-color:#dc2626;color:white;padding:15px;border-radius:6px;text-align:center;font-size:24px;font-weight:700;}
+
+.small-box {
+    background-color:#e5e7eb;
+    padding:10px;
+    border-radius:6px;
+    text-align:center;
+    font-weight:600;
+}
+
+</style>
+""", unsafe_allow_html=True)
+
+# =====================================================
+# LOGIN
 # =====================================================
 
 if "user" not in st.session_state:
     st.session_state.user = None
 
-# =====================================================
-# STYLING
-# =====================================================
-
-st.markdown("""
-<style>
-.stApp { background-color: #0b1622; }
-
-.main-title {
-    font-size: 42px;
-    font-weight: 800;
-    color: white;
-    text-align: center;
-    margin-bottom: 20px;
-}
-
-.kpi-box {
-    padding: 25px;
-    border-radius: 12px;
-    text-align: center;
-    font-size: 24px;
-    font-weight: 700;
-    color: white;
-}
-
-.blue {background: linear-gradient(135deg,#1e3a8a,#1e293b);}
-.green {background: linear-gradient(135deg,#16a34a,#065f46);}
-.amber {background: linear-gradient(135deg,#f59e0b,#b45309);}
-.red {background: linear-gradient(135deg,#dc2626,#7f1d1d);}
-
-.panel {
-    background: #132235;
-    padding: 20px;
-    border-radius: 14px;
-    color: white;
-}
-</style>
-""", unsafe_allow_html=True)
-
-# =====================================================
-# LOGIN SYSTEM
-# =====================================================
-
-def login_screen():
-
-    st.markdown("<div class='main-title'>MANUFACTURING CONTROL TOWER</div>", unsafe_allow_html=True)
-
+def login():
+    st.markdown("<div class='topbar'>Manufacturing Control Tower</div>", unsafe_allow_html=True)
     username = st.text_input("Username")
     password = st.text_input("Password", type="password")
 
     if st.button("Login"):
+        conn = get_connection()
+        c = conn.cursor()
+        c.execute("SELECT * FROM users WHERE username=? AND password=?",
+                  (username,password))
+        user = c.fetchone()
+        conn.close()
 
-        users = load_users()
-
-        if username in users and users[username]["password"] == password:
+        if user:
             st.session_state.user = {
-                "username": username,
-                "role": users[username]["role"],
-                "plant": users[username]["plant"]
+                "username": user[0],
+                "role": user[2],
+                "plant": user[3]
             }
-            st.rerun()
         else:
             st.error("Invalid Credentials")
 
 if st.session_state.user is None:
-    login_screen()
+    login()
     st.stop()
 
 # =====================================================
 # SIDEBAR
 # =====================================================
 
+PLANTS = ["JD","Snoair","APT","SP","Inhouse"]
+CATEGORIES = ["Chimney","Burner"]
+
 st.sidebar.success(f"Logged in: {st.session_state.user['username']}")
 
 if st.session_state.user["role"] == "Admin":
-    menu = st.sidebar.selectbox("Menu", ["Dashboard", "Shift Entry", "User Management"])
+    menu = st.sidebar.selectbox("Menu", ["Dashboard","Shift Entry","User Management"])
 else:
     menu = "Shift Entry"
 
 if st.sidebar.button("Logout"):
     st.session_state.user = None
-    st.rerun()
+    st.stop()
 
 # =====================================================
-# SHIFT ENTRY (SUPERVISOR ONLY)
+# SHIFT ENTRY
 # =====================================================
 
 if menu == "Shift Entry":
 
-    st.markdown("<div class='main-title'>SHIFT ENTRY</div>", unsafe_allow_html=True)
+    st.markdown("<div class='topbar'>Shift Entry</div>", unsafe_allow_html=True)
 
-    if st.session_state.user["role"] == "Admin":
-        plant = st.selectbox("Plant", PLANTS)
-    else:
+    if st.session_state.user["role"] == "Supervisor":
         plant = st.session_state.user["plant"]
         st.info(f"Plant Assigned: {plant}")
+    else:
+        plant = st.selectbox("Plant", PLANTS)
 
     date = st.date_input("Date", datetime.today())
     category = st.selectbox("Category", CATEGORIES)
+    sku = st.text_input("SKU")
 
-    col1, col2 = st.columns(2)
+    col1,col2,col3 = st.columns(3)
     plan = col1.number_input("Plan", 0)
     actual = col2.number_input("Actual", 0)
+    rejection = col3.number_input("Rejection", 0)
 
     if st.button("Save Entry"):
-
-        df = load_data()
-
-        new_row = pd.DataFrame([{
-            "date": date,
-            "plant": plant,
-            "category": category,
-            "plan": plan,
-            "actual": actual
-        }])
-
-        df = pd.concat([df, new_row], ignore_index=True)
-        save_data(df)
-
-        st.success("Entry Saved")
+        conn = get_connection()
+        c = conn.cursor()
+        c.execute("""
+        INSERT INTO production(date,plant,category,sku,plan,actual,rejection)
+        VALUES (?,?,?,?,?,?,?)
+        """,(str(date),plant,category,sku,plan,actual,rejection))
+        conn.commit()
+        conn.close()
+        st.success("Saved Successfully")
 
 # =====================================================
-# DASHBOARD
+# INDUSTRIAL DASHBOARD
 # =====================================================
 
 if menu == "Dashboard":
 
-    st.markdown("<div class='main-title'>MANUFACTURING CONTROL TOWER</div>", unsafe_allow_html=True)
+    st.markdown("<div class='topbar'>Cell Status</div>", unsafe_allow_html=True)
 
-    df = load_data()
+    conn = get_connection()
+    df = pd.read_sql("SELECT * FROM production", conn)
+    conn.close()
 
     if df.empty:
-        st.warning("No data available")
+        st.warning("No Data Available")
         st.stop()
 
-    df["date"] = pd.to_datetime(df["date"]).dt.date
+    df["date"] = pd.to_datetime(df["date"])
+    selected_date = st.date_input("Date Range: Today", datetime.today())
+    df = df[df["date"].dt.date == selected_date]
 
-    selected_date = st.date_input("Select Date", datetime.today())
-    df = df[df["date"] == selected_date]
+    plants = df["plant"].unique()
+    cols = st.columns(3)
 
-    total_plan = df["plan"].sum()
-    total_actual = df["actual"].sum()
+    for i, plant in enumerate(plants):
+        plant_df = df[df["plant"] == plant]
 
-    achievement = round((total_actual / total_plan) * 100, 2) if total_plan > 0 else 0
-    rejection = round(((total_plan - total_actual) / total_plan) * 100, 2) if total_plan > 0 else 0
+        total_plan = plant_df["plan"].sum()
+        total_actual = plant_df["actual"].sum()
+        total_rej = plant_df["rejection"].sum()
 
-    c1, c2, c3, c4 = st.columns(4)
-    c1.markdown(f"<div class='kpi-box blue'>{total_plan}<br>Total Plan</div>", unsafe_allow_html=True)
-    c2.markdown(f"<div class='kpi-box blue'>{total_actual}<br>Total Actual</div>", unsafe_allow_html=True)
-    c3.markdown(f"<div class='kpi-box green'>{achievement}%<br>Achievement</div>", unsafe_allow_html=True)
-    c4.markdown(f"<div class='kpi-box amber'>{rejection}%<br>Rejection</div>", unsafe_allow_html=True)
+        availability = (total_actual/total_plan)*100 if total_plan>0 else 0
+        quality = ((total_actual-total_rej)/total_actual)*100 if total_actual>0 else 0
+        performance = (total_actual/total_plan)*100 if total_plan>0 else 0
+        oee = (availability/100)*(quality/100)*(performance/100)*100
 
-    st.markdown("<br>", unsafe_allow_html=True)
+        col = cols[i % 3]
 
-    weekly = load_data()
-    weekly["date"] = pd.to_datetime(weekly["date"])
-    weekly = weekly.groupby("date").sum(numeric_only=True).reset_index()
+        with col:
+            st.markdown("<div class='plant-card'>", unsafe_allow_html=True)
+            st.subheader(plant)
 
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=weekly["date"], y=weekly["plan"], mode='lines+markers', name='Plan'))
-    fig.add_trace(go.Scatter(x=weekly["date"], y=weekly["actual"], mode='lines+markers', name='Actual'))
-    fig.update_layout(template="plotly_dark", height=450)
+            if oee >= 85:
+                css = "oee-green"
+            elif oee >= 70:
+                css = "oee-yellow"
+            else:
+                css = "oee-red"
 
-    st.plotly_chart(fig, use_container_width=True)
+            st.markdown(f"<div class='{css}'>{round(oee,1)}% OEE</div>", unsafe_allow_html=True)
 
-# =====================================================
-# USER MANAGEMENT
-# =====================================================
+            c1,c2 = st.columns(2)
+            c1.markdown(f"<div class='small-box'>Target<br>{total_plan}</div>", unsafe_allow_html=True)
+            c2.markdown(f"<div class='small-box'>Actual<br>{total_actual}</div>", unsafe_allow_html=True)
 
-if menu == "User Management":
+            c3,c4,c5 = st.columns(3)
+            c3.markdown(f"<div class='small-box'>Perf<br>{round(performance,1)}%</div>", unsafe_allow_html=True)
+            c4.markdown(f"<div class='small-box'>Qual<br>{round(quality,1)}%</div>", unsafe_allow_html=True)
+            c5.markdown(f"<div class='small-box'>Avail<br>{round(availability,1)}%</div>", unsafe_allow_html=True)
 
-    st.markdown("<div class='main-title'>USER MANAGEMENT</div>", unsafe_allow_html=True)
-
-    users = load_users()
-
-    users_df = pd.DataFrame([
-        {
-            "Username": u,
-            "Role": users[u]["role"],
-            "Plant": users[u]["plant"]
-        }
-        for u in users
-    ])
-
-    st.dataframe(users_df)
+            st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown("---")
-    st.subheader("Create User")
 
-    new_user = st.text_input("Username")
-    new_pass = st.text_input("Password", type="password")
-    role = st.selectbox("Role", ["Supervisor", "Admin"])
-    plant = st.selectbox("Plant Mapping", PLANTS)
+    st.subheader("Downtime / Rejection Trend")
 
-    if st.button("Create User"):
-        if new_user in users:
-            st.error("User already exists")
-        else:
-            users[new_user] = {
-                "password": new_pass,
-                "role": role,
-                "plant": plant
-            }
-            save_users(users)
-            st.success("User Created")
-            st.rerun()
+    trend = df.groupby("date").sum(numeric_only=True).reset_index()
+
+    fig = go.Figure()
+    fig.add_trace(go.Bar(x=trend["date"], y=trend["rejection"], name="Rejection"))
+    fig.update_layout(template="plotly_white")
+    st.plotly_chart(fig, use_container_width=True)
+
