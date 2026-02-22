@@ -4,7 +4,7 @@ import sqlite3
 from datetime import datetime
 import plotly.graph_objects as go
 
-st.set_option('server.runOnSave', False)
+#st.set_option('server.runOnSave', False)
 
 st.set_page_config(layout="wide")
 
@@ -14,7 +14,9 @@ st.set_page_config(layout="wide")
 
 @st.cache_resource
 def get_connection():
-    return sqlite3.connect("control_tower_v2.db", check_same_thread=False)
+    conn = sqlite3.connect("control_tower.db", check_same_thread=False)
+    conn.execute("PRAGMA journal_mode=WAL;")
+    return conn
 
 def init_db():
     conn = get_connection()
@@ -309,5 +311,6 @@ if menu == "User Management":
                   (plant_sel,new_sku))
         conn.commit()
         st.success("SKU Added")
+
 
 
