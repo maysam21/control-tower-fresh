@@ -118,9 +118,6 @@ else:
 
 if st.sidebar.button("Logout"):
     st.session_state.user = None
-    st.experimental_set_query_params()
-    st.stop()
-
 # =========================================================
 # SHIFT ENTRY (Supervisor Only)
 # =========================================================
@@ -235,18 +232,16 @@ if menu == "User Management":
     col1,col2 = st.columns(2)
 
     if col1.button("Update User"):
-        if new_password:
-            st.session_state.users[selected_user]["password"] = new_password
-        st.session_state.users[selected_user]["role"] = new_role
-        st.session_state.users[selected_user]["plant"] = new_plant
-        st.success("User Updated")
-        st.rerun()
+       if new_password:
+           st.session_state.users[selected_user]["password"] = new_password
+       st.session_state.users[selected_user]["role"] = new_role
+       st.session_state.users[selected_user]["plant"] = new_plant
+       st.success("User Updated")
 
     if col2.button("Delete User"):
         if selected_user != "admin":
             del st.session_state.users[selected_user]
             st.success("User Deleted")
-            st.rerun()
         else:
             st.error("Cannot delete Admin user")
 
@@ -271,5 +266,5 @@ if menu == "User Management":
                 "plant": plant_map
             }
             st.success("User Created Successfully")
-            st.rerun()
+
 
