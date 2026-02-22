@@ -100,8 +100,7 @@ else:
     menu = "Shift Entry"
 
 if st.sidebar.button("Logout"):
-    st.session_state.user = None
-    st.stop()
+    st.session_state.clear()
 
 # =====================================================
 # SHIFT ENTRY
@@ -124,7 +123,7 @@ if menu == "Shift Entry":
     plan = col1.number_input("Plan", 0)
     actual = col2.number_input("Actual", 0)
 
-    if st.button("Save Entry"):
+    if st.button("Save Entry", use_container_width=True):
         conn = get_connection()
         c = conn.cursor()
         c.execute("""
@@ -141,37 +140,78 @@ if menu == "Shift Entry":
 
 if menu == "Dashboard":
 
-    st.title("MANUFACTURING CONTROL TOWER")
+    st.markdown("## EXECUTIVE CONTROL TOWER")
 
     conn = get_connection()
     df = pd.read_sql("SELECT * FROM production", conn)
     conn.close()
 
     if df.empty:
-        st.warning("No production data available")
+        st.warning("No data available")
         st.stop()
 
-    df["date"] = pd.to_datetime(df["date"]).dt.date
+    df["date"] = pd.to_datetime(df["date"])
+
+    # ----------- DATE FILTER -----------
     selected_date = st.date_input("Select Date", datetime.today())
-    df = df[df["date"] == selected_date]
+    today_df = df[df["date"].dt.date == selected_date]
 
-    total_plan = df["plan"].sum()
-    total_actual = df["actual"].sum()
+    # ----------- MTD DATA -----------
+    current_month = selected_date.month
+    current_year = selected_date.year
 
-    achievement = round((total_actual/total_plan)*100,2) if total_plan>0 else 0
+    mtd_df = df[
+        (df["date"].dt.month == current_month) &
+        (df["date"].dt.year == current_year)
+    ]
 
-    col1,col2,col3 = st.columns(3)
-    col1.metric("Total Plan", total_plan)
-    col2.metric("Total Actual", total_actual)
-    col3.metric("Achievement %", achievement)
+    # ----------- KPI SECTION -----------
 
-    weekly = pd.read_sql("SELECT date,SUM(plan) plan,SUM(actual) actual FROM production GROUP BY date", get_connection())
-    weekly["date"] = pd.to_datetime(weekly["date"])
+    total_today_plan = today_df["plan"].sum()
+    total_today_actual = today_df["actual"].sum()
+
+    total_mtd_plan = mtd_df["plan"].sum()
+    total_mtd_actual = mtd_df["actual"].sum()
+
+    ach_today = round((total_today_actual/total_today_plan)*100,2) if total_today_plan>0 else 0
+    ach_mtd = round((total_mtd_actual/total_mtd_plan)*100,2) if total_mtd_plan>0 else 0
+
+    c1,c2,c3,c4 = st.columns(4)
+    c1.metric("Today Plan", total_today_plan)
+    c2.metric("Today Actual", total_today_actual)
+    c3.metric("Today Achievement %", ach_today)
+    c4.metric("MTD Achievement %", ach_mtd)
+
+    st.markdown("---")
+
+    # ----------- PLANT RANKING -----------
+
+    plant_df = today_df.groupby("plant").sum(numeric_only=True).reset_index()
+    plant_df["Achievement %"] = (
+        (plant_df["actual"]/plant_df["plan"])*100
+    ).round(1)
+
+    plant_df = plant_df.sort_values("Achievement %", ascending=False)
+
+    st.subheader("Plant Performance Ranking")
+    st.dataframe(plant_df, use_container_width=True)
+
+    # ----------- TREND GRAPH -----------
+
+    weekly = df.groupby("date").sum(numeric_only=True).reset_index()
 
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=weekly["date"], y=weekly["plan"], name="Plan"))
-    fig.add_trace(go.Scatter(x=weekly["date"], y=weekly["actual"], name="Actual"))
-    fig.update_layout(template="plotly_dark")
+    fig.add_trace(go.Scatter(
+        x=weekly["date"],
+        y=weekly["actual"],
+        mode="lines+markers",
+        name="Actual"
+    ))
+    fig.update_layout(
+        template="plotly_dark",
+        height=450
+    )
+
     st.plotly_chart(fig, use_container_width=True)
 
 # =====================================================
@@ -206,3 +246,4 @@ if menu == "User Management":
         except:
             st.error("User already exists")
         conn.close()
+
