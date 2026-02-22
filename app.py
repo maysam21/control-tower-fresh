@@ -11,7 +11,7 @@ st.set_page_config(layout="wide")
 # =====================================================
 
 def get_connection():
-    return sqlite3.connect("control_tower.db", check_same_thread=False)
+    return sqlite3.connect("control_tower_v2.db", check_same_thread=False)
 
 def init_db():
     conn = get_connection()
@@ -314,3 +314,4 @@ if menu == "User Management":
         conn.commit()
         conn.close()
         st.success("SKU Added")
+
